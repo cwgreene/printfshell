@@ -4,9 +4,14 @@ import shlex
 
 import traceback
 
-import pwn
+#import readline
+import os
 
-class ExitException(BaseException):
+#if os.path.exists("./.shell_history"):
+#    print("Found history!")
+#    readline.read_history_file("./.shell_history")
+
+class ExitException(Exception):
     pass
 
 def Command(obj):
@@ -38,6 +43,7 @@ class Shell:
             try:
                 userinput = input(f"{self.prompt}")
                 result = self.evaluate(userinput)
+                #print(readline.get_current_history_length())
             except ExitException as e:
                 print(e)
                 break
@@ -47,6 +53,7 @@ class Shell:
     def evaluate(self, command):
         command, *parts = shlex.split(command)
         if command == self.exit_command:
+            #readline.write_history_file("./.shell_history")
             raise ExitException()
         elif command in self.commands:
             self.commands[command](*parts)
