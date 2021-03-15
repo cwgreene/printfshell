@@ -4,12 +4,15 @@ import shlex
 
 import traceback
 
-#import readline
+import readline
 import os
+import atexit
 
-#if os.path.exists("./.shell_history"):
-#    print("Found history!")
-#    readline.read_history_file("./.shell_history")
+if os.path.exists("./.shell_history"):
+    readline.read_history_file("./.shell_history")
+def save_readline_history():
+    readline.write_history_file("./.shell_history")
+atexit.register(save_readline_history)
 
 class ExitException(Exception):
     pass
@@ -18,7 +21,6 @@ def Command(obj):
     if not hasattr(obj, '__metadata__'):
         obj.__metadata__ = {}
     obj.__metadata__[Command] = obj.__name__
-    print(obj.__metadata__)
     return obj
 
 class Shell:
@@ -36,14 +38,13 @@ class Shell:
             for command in inspect.getmembers(self, predicate=inspect.ismethod)
             if self.isCommand(command[1])
         }
-        print(self.commands)
 
     def runloop(self):
         while True:
             try:
                 userinput = input(f"{self.prompt}")
                 result = self.evaluate(userinput)
-                #print(readline.get_current_history_length())
+                print(readline.get_current_history_length())
             except ExitException as e:
                 print(e)
                 break
@@ -53,7 +54,6 @@ class Shell:
     def evaluate(self, command):
         command, *parts = shlex.split(command)
         if command == self.exit_command:
-            #readline.write_history_file("./.shell_history")
             raise ExitException()
         elif command in self.commands:
             self.commands[command](*parts)
