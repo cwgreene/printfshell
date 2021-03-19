@@ -43,13 +43,24 @@ class Shell:
         while True:
             try:
                 userinput = input(f"{self.prompt}")
+                if userinput == "":
+                    continue
                 result = self.evaluate(userinput)
-                print(readline.get_current_history_length())
             except ExitException as e:
                 print(e)
                 break
+            except EOFError:
+                print("")
+                break
             except Exception as e:
                 traceback.print_exc()
+            except KeyboardInterrupt:
+                buffer = readline.get_line_buffer()
+                print("")
+                if buffer == "":
+                    break
+                else:
+                    print("^C")
 
     def evaluate(self, command):
         command, *parts = shlex.split(command)
@@ -57,6 +68,8 @@ class Shell:
             raise ExitException()
         elif command in self.commands:
             self.commands[command](*parts)
+        else:
+            print(f"Command '{command}' not found")
 
 class EchoShell(Shell):
     @Command
