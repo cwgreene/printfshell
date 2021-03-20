@@ -133,7 +133,15 @@ class PrintfShell(shell.Shell):
         while len(all_bytes) < n:
             suffix = pad + pwnlib.util.packing.p64(addr + offset)
             if b"\x0a" in suffix:
-                print(f"Cowardly refusing to look at a memory address with a 0xa in it {hex(addr+offset)}. Probably 0x0 ;)")
+                # (1) target_address (contains 0xa's)
+                # JUNKJUNK # because newlines
+                # address of (1)
+                # format_specifier
+                
+                # put suffix on stack
+                self.read_response("\x00"*16+new_suffix)
+
+                # replace all bytes in suffix
                 all_bytes += b"\x00"
             else:
                 res = self.read_response(command + suffix)
