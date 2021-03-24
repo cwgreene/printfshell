@@ -49,9 +49,9 @@ class Shell:
             except ExitException as e:
                 print(e)
                 break
-            except EOFError:
-                print("")
-                break
+            #except EOFError:
+            #    print("")
+            #    break
             except Exception as e:
                 traceback.print_exc()
             except KeyboardInterrupt:
