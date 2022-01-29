@@ -19,7 +19,7 @@ class PrintfShell(shell.Shell):
         self.conn = conn
         self.initial_marker = initial_marker
         self.marker = marker
-        if not initial_marker:
+        if initial_marker == None:
             self.initial_marker = self.marker
         self.prefix = prefix_response
         # Stack Offset is the first argument index. THat is
@@ -33,6 +33,11 @@ class PrintfShell(shell.Shell):
     @Command
     def set_marker(self, marker):
         self.marker = marker
+
+    @Command
+    def set_initial_marker(self, marker):
+        self.initial_marker = marker
+
 
     @Command
     def raw(self, *args):
@@ -52,7 +57,9 @@ class PrintfShell(shell.Shell):
         port = int(port)
         self.conn = pwnlib.tubes.remote.remote(address, port)
         #logging.info(f"Connected. Awaiting '{self.initial_marker}'")
-        self.conn.recvuntil(self.initial_marker)
+        if self.initial_marker != b"":
+            print(self.initial_marker)
+            self.conn.recvuntil(self.initial_marker)
         self.stack_base = None
         self.stack_offset = None
         self.format_location = None
@@ -87,8 +94,9 @@ class PrintfShell(shell.Shell):
     
     @Command
     def disasm_at(self, addr : int, n : int):
+        addr = int(addr, 16)
         bs = self.read_bytes(addr, n)
-        print(pwnlib.asm.disasm(bs,arch="amd64"))
+        print(pwnlib.asm.disasm(bs,arch="amd64", vma=addr))
 
     @Command
     def set_stack_base(self, addr : int):
@@ -171,7 +179,8 @@ class PrintfShell(shell.Shell):
             pad = b"\x00"*padn
             return command + pad
         n = int(n)
-        addr = int(addr,16)
+        if type(addr) != int:
+            addr = int(addr,16)
         all_bytes = b""
         offset = 0
         while len(all_bytes) < n:
