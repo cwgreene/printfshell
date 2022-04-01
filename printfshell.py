@@ -1,5 +1,6 @@
 import shell
 import pwnlib
+import pwnlib.tubes
 import re
 
 import math
@@ -67,7 +68,6 @@ class PrintfShell(shell.Shell):
         self.conn = pwnlib.tubes.remote.remote(address, port)
         #logging.info(f"Connected. Awaiting '{self.initial_marker}'")
         if self.initial_marker != b"":
-            print(self.initial_marker)
             self.conn.recvuntil(self.initial_marker)
         self.stack_base = None
         self.stack_offset = None
@@ -77,11 +77,13 @@ class PrintfShell(shell.Shell):
     def read_response(self, string):
         marker = self.marker
         string = self.write(string)
+        #print("Sending", string)
         self.conn.send(string)
         if self.prefix:
+            #print("Waiting for", self.prefix)
             self.conn.recvuntil(self.prefix)
         resp = self.conn.recvuntil(marker)
-        print(resp, resp[:-len(marker)])
+        #print(resp, resp[:-len(marker)])
         return self.read(resp[:-len(marker)])
     
     @Command
@@ -96,6 +98,7 @@ class PrintfShell(shell.Shell):
         for index, value in enumerate(stack):
             if value == b"(nil)":
                 value = b"0x0"
+            #print(value)
             _, value = value.strip().split(b"0x")
             bs = int(value, 16).to_bytes(8, byteorder="little")
             print(f"{index+1:<4} {str(value, 'ascii'):<16} {repr(bs)}")
